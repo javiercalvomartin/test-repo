@@ -758,6 +758,9 @@
         }
 
         function update() {
+            // Always update particles even when game over (for explosion effect)
+            game.particles.update();
+
             if (!game.running) return;
 
             game.frameCount++;
@@ -783,9 +786,6 @@
             // Update obstacles
             game.obstacles.forEach(obs => obs.update(game.speed));
             game.obstacles = game.obstacles.filter(obs => obs.z > -100);
-
-            // Update particles
-            game.particles.update();
 
             // Check collision (with initial invulnerability)
             if (game.frameCount > 90 && checkCollision()) {
@@ -838,6 +838,25 @@
             try {
                 update();
                 draw();
+
+                // Draw "GAME OVER" text on canvas if game ended (backup visibility)
+                if (!game.running && game.gameOverTime) {
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.fillStyle = '#f0f';
+                    ctx.font = 'bold ' + Math.min(width * 0.12, 60) + 'px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = '#f0f';
+                    ctx.shadowBlur = 20;
+                    ctx.fillText('GAME OVER', centerX, centerY - 40);
+                    ctx.fillStyle = '#0ff';
+                    ctx.font = Math.min(width * 0.08, 40) + 'px Courier New';
+                    ctx.fillText('Score: ' + game.score, centerX, centerY + 20);
+                    ctx.font = Math.min(width * 0.05, 24) + 'px Courier New';
+                    ctx.fillText('Tap to restart', centerX, centerY + 80);
+                    ctx.restore();
+                }
             } catch (e) {
                 console.error('Game error:', e);
             }
@@ -856,6 +875,8 @@
             game.obstacles = [];
             game.frameCount = 0;
             game.particles = new ParticleSystem();
+            game.gameOverTime = null;
+            game.isNewRecord = false;
 
             document.getElementById('startScreen').classList.add('hidden');
             document.getElementById('gameOverScreen').classList.add('hidden');
@@ -865,29 +886,34 @@
         }
 
         function gameOver() {
+            if (!game.running) return; // Prevent multiple calls
+
             game.running = false;
-            audio.playCrash();
+            game.gameOverTime = Date.now();
+
+            try {
+                audio.playCrash();
+            } catch(e) {}
 
             // Explosion particles
             const x = centerX + game.playerX;
             const y = height - 120;
-            game.particles.emit(x, y, 50, '#f0f');
-            game.particles.emit(x, y, 50, '#0ff');
-            game.particles.emit(x, y, 30, '#ff0');
+            game.particles.emit(x, y, 30, '#f0f');
+            game.particles.emit(x, y, 30, '#0ff');
 
             // Check high score
-            const isNewRecord = game.score > game.highScore;
-            if (isNewRecord) {
+            game.isNewRecord = game.score > game.highScore;
+            if (game.isNewRecord) {
                 game.highScore = game.score;
-                localStorage.setItem('synthRunnerHighScore', game.highScore);
+                try {
+                    localStorage.setItem('synthRunnerHighScore', game.highScore);
+                } catch(e) {}
             }
 
-            // Show game over screen after delay
-            setTimeout(() => {
-                document.getElementById('finalScore').textContent = game.score.toLocaleString();
-                document.getElementById('newRecord').classList.toggle('hidden', !isNewRecord);
-                document.getElementById('gameOverScreen').classList.remove('hidden');
-            }, 500);
+            // Show game over screen immediately
+            document.getElementById('finalScore').textContent = game.score.toLocaleString();
+            document.getElementById('newRecord').classList.toggle('hidden', !game.isNewRecord);
+            document.getElementById('gameOverScreen').classList.remove('hidden');
         }
 
         function movePlayer(direction) {
@@ -921,11 +947,26 @@
         const touchZones = document.querySelectorAll('.touch-zone');
         touchZones[0].addEventListener('touchstart', (e) => {
             e.preventDefault();
-            movePlayer(-1);
+            if (!game.running && game.gameOverTime) {
+                startGame();
+            } else {
+                movePlayer(-1);
+            }
         });
         touchZones[1].addEventListener('touchstart', (e) => {
             e.preventDefault();
-            movePlayer(1);
+            if (!game.running && game.gameOverTime) {
+                startGame();
+            } else {
+                movePlayer(1);
+            }
+        });
+
+        // Canvas tap to restart
+        canvas.addEventListener('click', () => {
+            if (!game.running && game.gameOverTime) {
+                startGame();
+            }
         });
 
         // Keyboard controls
