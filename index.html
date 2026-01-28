@@ -731,9 +731,18 @@
         }
 
         function spawnObstacle() {
-            // Spawn 1-3 obstacles, leaving at least one lane free
+            // Spawn 1-2 obstacles, leaving at least one lane free
             const obstacleCount = Math.floor(Math.random() * 2) + 1;
-            const lanes = [0, 1, 2, 3, 4];
+
+            // Get available lanes (exclude player lane during grace period)
+            let lanes = [0, 1, 2, 3, 4];
+
+            // During first 3 seconds, don't spawn in player's lane or adjacent
+            if (game.frameCount < 180) {
+                lanes = lanes.filter(l => Math.abs(l - game.playerLane) > 1);
+            }
+
+            if (lanes.length === 0) return;
 
             // Shuffle lanes
             for (let i = lanes.length - 1; i > 0; i--) {
@@ -742,7 +751,7 @@
             }
 
             // Pick lanes for obstacles (leave at least 2 free)
-            const maxObstacles = Math.min(obstacleCount, CONFIG.lanes - 2);
+            const maxObstacles = Math.min(obstacleCount, Math.max(1, lanes.length - 1));
             for (let i = 0; i < maxObstacles; i++) {
                 game.obstacles.push(new Obstacle(lanes[i]));
             }
@@ -764,8 +773,10 @@
             // Update stars
             game.stars.forEach(star => star.update(game.speed));
 
-            // Spawn obstacles
-            if (Math.random() < CONFIG.obstacleSpawnRate * game.speedMultiplier) {
+            // Spawn obstacles (with grace period at start)
+            const spawnDelay = Math.max(0, 1 - game.frameCount / 120); // Reduced spawn for first 2 sec
+            const effectiveSpawnRate = CONFIG.obstacleSpawnRate * game.speedMultiplier * (1 - spawnDelay * 0.8);
+            if (game.frameCount > 60 && Math.random() < effectiveSpawnRate) {
                 spawnObstacle();
             }
 
@@ -776,8 +787,8 @@
             // Update particles
             game.particles.update();
 
-            // Check collision
-            if (checkCollision()) {
+            // Check collision (with initial invulnerability)
+            if (game.frameCount > 90 && checkCollision()) {
                 gameOver();
                 return;
             }
@@ -824,8 +835,12 @@
         }
 
         function gameLoop() {
-            update();
-            draw();
+            try {
+                update();
+                draw();
+            } catch (e) {
+                console.error('Game error:', e);
+            }
             requestAnimationFrame(gameLoop);
         }
 
